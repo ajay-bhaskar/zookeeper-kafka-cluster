@@ -1,0 +1,281 @@
+# Run the following commands on specified node
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node1
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node2
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node3
+# rm -rf /tmp/kafka/* 
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-0
+  labels:
+    app: kafka-broker-0
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: kafka-broker-0
+  type: NodePort
+  
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-1
+  labels:
+    app: kafka-broker-1
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: kafka-broker-1
+  type: NodePort
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-2
+  labels:
+    app: kafka-broker-2
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: kafka-broker-2
+  type: NodePort
+    
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-0
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ip-172-31-14-134
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-1
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-1
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-2
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-2
+
+
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: kafka-deployment-0
+spec:
+  serviceName: broker-0
+  replicas: 1
+  selector:
+    matchLabels:
+      name: kafka-broker-0
+  template:
+    metadata:
+      labels:
+        name: kafka-broker-0
+    spec:
+      containers:
+      - name: kafka
+        image: wurstmeister/kafka:2.11-2.0.1
+        ports:
+        - containerPort: 9092
+        env:
+        - name: KAFKA_ADVERTISED_PORT
+          value: "9092"
+        - name: KAFKA_ADVERTISED_HOST_NAME
+          value: "broker-0"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: zookeeper-service:2181,zookeeper-service:2181,zookeeper-service:2181
+        - name: KAFKA_CREATE_TOPICS
+          value: "test-topic:3:2:compact"
+        - name: KAFKA_LOG_DIRS
+          value: /kafka/kafka-logs
+        - name: KAFKA_BROKER_ID
+          value: "1"
+        - name: KAFKA_JMX_PORT
+          value: "5555"
+        - name: KAFKA_CLEANUP_POLICY
+          value: "compact"
+        volumeMounts:
+          - name: kafka-0
+            mountPath: "/kafka/kafka-logs"
+           
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-0
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: local-storage
+      resources:
+        requests:
+          storage: 1Gi
+
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: kafka-deployment-1
+spec:
+  serviceName: broker-1
+  replicas: 1
+  selector:
+    matchLabels:
+      name: kafka-broker-1
+  template:
+    metadata:
+      labels:
+        name: kafka-broker-1
+    spec:
+      containers:
+      - name: kafka
+        image: wurstmeister/kafka:2.11-2.0.1
+        ports:
+        - containerPort: 9092
+        env:
+        - name: KAFKA_ADVERTISED_PORT
+          value: "9092"
+        - name: KAFKA_ADVERTISED_HOST_NAME
+          value: "broker-1"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: zookeeper-service:2181,zookeeper-service:2181,zookeeper-service:2181
+        - name: KAFKA_CREATE_TOPICS
+          value: "test-topic:3:2:compact"
+        - name: KAFKA_LOG_DIRS
+          value: /kafka/kafka-logs
+        - name: KAFKA_BROKER_ID
+          value: "2"
+        - name: KAFKA_JMX_PORT
+          value: "5555"
+        - name: KAFKA_CLEANUP_POLICY
+          value: "compact"
+        volumeMounts:
+          - name: kafka-1
+            mountPath: "/kafka/kafka-logs"
+           
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-1
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: local-storage
+      resources:
+        requests:
+          storage: 1Gi
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: kafka-deployment-2
+spec:
+  serviceName: broker-2
+  replicas: 1
+  selector:
+    matchLabels:
+      name: kafka-broker-2
+  template:
+    metadata:
+      labels:
+        name: kafka-broker-2
+    spec:
+      containers:
+      - name: kafka
+        image: wurstmeister/kafka:2.11-2.0.1
+        ports:
+        - containerPort: 9092
+        env:
+        - name: KAFKA_ADVERTISED_PORT
+          value: "9092"
+        - name: KAFKA_ADVERTISED_HOST_NAME
+          value: "broker-2"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: zookeeper-service:2181,zookeeper-service:2181,zookeeper-service:2181
+        - name: KAFKA_CREATE_TOPICS
+          value: "test-topic:3:2:compact"
+        - name: KAFKA_LOG_DIRS
+          value: /kafka/kafka-logs
+        - name: KAFKA_BROKER_ID
+          value: "3"
+        - name: KAFKA_JMX_PORT
+          value: "5555"
+        - name: KAFKA_CLEANUP_POLICY
+          value: "compact"
+        volumeMounts:
+          - name: kafka-2
+            mountPath: "/kafka/kafka-logs"
+           
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-2
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: local-storage
+      resources:
+        requests:
+          storage: 1Gi
