@@ -3,6 +3,16 @@
 # mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node2
 # mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node3
 # rm -rf /tmp/kafka/* 
+#Create Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --create  --zookeeper zookeeper-service:2181 --topic hello1 --partitions 3 --replication-factor 2
+#Delete Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --delete  --zookeeper zookeeper-service:2181 --topic hello1
+#Describe Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --describe --zookeeper zookeeper-service:2181
+#Consumer
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker:9092 --from-beginning --topic hello1 --partition 0
+#Producer
+# kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server broker:9092 --topic hello1
 
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -138,7 +148,7 @@ spec:
             runAsUser: 0
           volumeMounts:
             - mountPath: /kafka
-              name: data
+              name: kafka
       containers:
         - image: wurstmeister/kafka:2.13-2.6.0
           imagePullPolicy: Always
@@ -151,15 +161,15 @@ spec:
           - "export KAFKA_BROKER_ID=$(cat /kafka/id) && start-kafka.sh"
           env:
           - name: KAFKA_ADVERTISED_PORT
-            value: "9092"
+            value: "9093"
           - name: KAFKA_ADVERTISED_HOST_NAME
             value: "broker"
           - name: KAFKA_ADVERTISED_LISTENERS
-            value: "INSIDE://:9092"
+            value: "INSIDE://:9093,OUTSIDE://:9092"
           - name: KAFKA_LISTENERS
-            value: "INSIDE://:9092"
+            value: "INSIDE://:9093,OUTSIDE://:9092"
           - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-            value: "INSIDE:PLAINTEXT"
+            value: "INSIDE:PLAINTEXT,OUTSIDE:SSL"
           - name: KAFKA_INTER_BROKER_LISTENER_NAME
             value: "INSIDE"
           - name: KAFKA_ZOOKEEPER_CONNECT
