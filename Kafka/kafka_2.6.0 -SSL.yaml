@@ -1,0 +1,199 @@
+# Run the following commands on specified node
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node1
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node2
+# mkdir /tmp/kafka && chmod -R 777 /tmp/kafka		# Node3
+# rm -rf /tmp/kafka/* 
+# Copy the keystore, server-client properties file
+#Create Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --create  --zookeeper zookeeper-service:2181 --topic hello --partitions 3 --replication-factor 2
+#Delete Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --delete  --zookeeper zookeeper-service:2181 --topic hello
+#Describe Topics
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-topics.sh --describe --zookeeper zookeeper-service:2181
+#Consumer
+#kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server broker:9092 --from-beginning --topic hello --partition 0
+#Producer
+# kubectl exec kafka-deployment-0 -it -- /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server broker:9092 --topic hello
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-0
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - ip-172-31-14-134
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-1
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-1
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: kafka-pv-2
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /tmp/kafka
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - k8s-worker-2
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker
+  labels:
+    app: broker
+spec:
+  ports:
+  - port: 9092
+    targetPort: 9092
+    protocol: TCP
+  selector:
+    app: broker
+  type: NodePort
+    
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka-deployment
+spec:
+  serviceName: broker
+  replicas: 3
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: broker
+  template:
+    metadata:
+      labels:
+        app: broker
+    spec:
+      initContainers:
+        - command:
+            - /bin/sh
+            - -c
+            - |-
+              set -ex;
+              if [[ ! -f "/kafka/id" ]]; then
+                IDX="$(echo $HOSTNAME| rev | cut -d "-" -f1 | rev)"
+                SVR_INDEX=$((IDX+1))
+                echo $SVR_INDEX > "/kafka/id"
+              fi
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          image: busybox:1.28
+          imagePullPolicy: IfNotPresent
+          name: kafka-init
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /kafka
+              name: kafka
+      containers:
+        - image: wurstmeister/kafka:2.13-2.6.0
+          imagePullPolicy: Always
+          name: kafka
+          ports:
+          - containerPort: 9092
+          command:
+          - sh
+          - -c
+          - "export KAFKA_BROKER_ID=$(cat /kafka/kafka-logs/id) && \
+             cp /kafka/kafka-logs/server.* /opt/kafka/config && \
+             cp /kafka/kafka-logs/client* /opt/kafka/config && \
+             start-kafka.sh"
+          env:
+          - name: KAFKA_ADVERTISED_PORT
+            value: "9093"
+          - name: KAFKA_ADVERTISED_HOST_NAME
+            value: "broker"
+          - name: KAFKA_ADVERTISED_LISTENERS
+            value: "INSIDE://:9093,OUTSIDE://:9092"
+          - name: KAFKA_LISTENERS
+            value: "INSIDE://:9093,OUTSIDE://:9092"
+          - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+            value: "INSIDE:SSL,OUTSIDE:SSL"
+          - name: KAFKA_ZOOKEEPER_CONNECT
+            value: zookeeper-service:2181,zookeeper-service:2181,zookeeper-service:2181
+          - name: KAFKA_CREATE_TOPICS
+            value: "test-topic:3:2:compact"
+          - name: KAFKA_LOG_DIRS
+            value: /kafka/kafka-logs
+          - name: KAFKA_JMX_PORT
+            value: "5555"
+          - name: KAFKA_CLEANUP_POLICY
+            value: "compact"
+          volumeMounts:
+            - mountPath: /kafka/kafka-logs
+              name: kafka
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      storageClassName: local-storage
+      resources:
+        requests:
+          storage: 0.5Gi
