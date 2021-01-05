@@ -1,0 +1,56 @@
+mkdir -p /home/ec2-user/kafka-ssl-demo
+cd /home/ec2-user/kafka-ssl-demo
+chown -R ec2-user /home/ec2-user/kafka-ssl-demo
+
+**************************************************************************************************************************
+//Create Certificate Authority (CA)
+
+openssl req -new -x509 -days 365 -keyout ca.key -out ca.crt  -passout pass:truststore
+
+**************************************************************************************************************************
+
+//Generate SSL Keys and Certificate for Kafka Brokers
+
+keytool -genkey -keystore server.keystore -alias broker -dname CN=broker -keyalg RSA -validity 365 -ext san=dns:broker  -storepass truststore
+
+//Sign Broker Certificate (Using CA)
+
+keytool -certreq -keystore server.keystore -alias broker -file server.unsigned.crt -storepass truststore
+
+openssl x509 -req -CA ca.crt -CAkey ca.key -in server.unsigned.crt -out server.crt -days 365 -CAcreateserial -passin pass:truststore
+
+//Import Certificates to Broker Keystore
+
+keytool -import -file ca.crt -keystore server.keystore -alias ca -storepass truststore -noprompt
+keytool -import -file server.crt -keystore server.keystore -alias broker -storepass truststore -noprompt
+
+
+**************************************************************************************************************************
+
+//Generate Certificate for Client Authentication
+
+keytool -genkey -keystore client.keystore -alias client -dname CN=client -keyalg RSA -validity 365 -storepass truststore
+
+//Sign Client Certificate (Using CA)
+
+keytool -certreq -keystore client.keystore -alias client -file client.unsigned.crt -storepass truststore
+
+openssl x509 -req -CA ca.crt -CAkey ca.key -in client.unsigned.crt -out client.crt -days 365 -CAcreateserial -passin pass:truststore
+ 
+//Import Certificates to Client Keystore
+ 
+keytool -import -file ca.crt -keystore client.keystore -alias ca -storepass truststore -noprompt
+keytool -import -file client.crt -keystore client.keystore -alias client -storepass truststore -noprompt
+  
+**************************************************************************************************************************
+
+//Import CA Certificate to Client & Server Truststore
+
+keytool -import -file ca.crt -keystore server.truststore -alias ca -storepass truststore -noprompt
+keytool -import -file ca.crt -keystore client.truststore -alias ca -storepass truststore -noprompt
+
+**************************************************************************************************************************
+// Check/Verify certificates
+
+keytool -list -keystore client.truststore -storepass truststore -v
+openssl s_client -connect 172.31.14.134:31503 -CAfile /home/ec2-user/kafka-ssl-demo/ca.crt
